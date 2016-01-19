@@ -1,12 +1,25 @@
 var net = require('net');
 var chalk = require('chalk');
 var log = require('./lib/log.js');
+var Sequelize = require('sequelize');
+var sequelize = new Sequelize('mysql://root:$setufpa@localhost:3306/nodefinger');
+
+var Users = sequelize.define('users', {
+    name: Sequelize.STRING,
+    userid: Sequelize.TEXT,
+    fingerid: Sequelize.INTEGER,
+    admin: Sequelize.INTEGER,
+    active: Sequelize.INTEGER
+})
+
+
+var port = 7000;
 
 // var debugLevel = 1;
 
 
 var fingerServer = net.createServer(setServer)
-    .listen(7000, function() {
+    .listen(port, function() {
         log('server', "O servidor está sendo iniciado...");
     })
     .on('connection', function(data){
@@ -23,24 +36,32 @@ var fingerServer = net.createServer(setServer)
 
 function setServer(sock){
 
+    sock.setKeepAlive(true, 30000);
+
     var sessionId;
 
     sock.on('data', function(data){
         dataParser(data, sock);
-    });
-
-    sock.on('close', function(data){
+    })
+    .on('close', function(data){
         console.log(data);
+    })
+    .on('error', function(err){
+        errorHandler(err);
     });
 }
 
 function dataParser(data, sock){
     log('data', data);
+
+
     try{
        data = JSON.parse(data);
     } catch(err){
         errorHandler(err);
     }
+
+
 
     if(data.type === 'conn'){
         log('client', 'O cliente \"' + data.hwid + '\" está tentando se conectar');
@@ -52,8 +73,13 @@ function dataParser(data, sock){
         }
     }
 
+
+
     if(sessionId){
         switch(data.type){
+            case 'fingerid':
+                sendMessage(sock, 'fingerid', data.id)
+                break;
         }
     }
 
@@ -72,9 +98,24 @@ function errorHandler(err){
 
 function sendMessage(sock, type, data){
 
-    if(type == 'authok')
-        sock.write(JSON.stringify({ type: 'conn', 'auth': 'ok', name: "INFERNO" }));
-    else if(type == 'authfail')
-        sock.write(JSON.stringify({ type: 'conn', 'auth': 'fail' }));
+    switch(type){
+        case 'authok':
+            sock.write(JSON.stringify({ type: 'conn', 'auth': 'ok', name: "TESTE" }));
+            break;
+        case 'authfail':
+            sock.write(JSON.stringify({ type: 'conn', 'auth': 'fail' }));
+            break;
+        case 'fingerid':
+            checkFinger(data)
+            sock.write(JSON.stringify({type: 'auth', auth: 'fail'}));
+            break;
+    }
 
 }
+
+function checkFinger(id){
+    Users.findAll({
+        where: { id: 1 }
+    })
+}
+
