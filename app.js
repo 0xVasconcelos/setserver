@@ -12,6 +12,7 @@ var Users = sequelize.define('users', {
     active: Sequelize.INTEGER
 })
 
+//update db
 
 var port = 7000;
 
