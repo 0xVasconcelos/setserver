@@ -2,22 +2,11 @@ var net = require('net');
 var chalk = require('chalk');
 var log = require('./lib/log.js');
 var Sequelize = require('sequelize');
-var sequelize = new Sequelize('mysql://root:$setufpa@localhost:3306/nodefinger');
-
-var Users = sequelize.define('users', {
-    name: Sequelize.STRING,
-    userid: Sequelize.TEXT,
-    fingerid: Sequelize.INTEGER,
-    admin: Sequelize.INTEGER,
-    active: Sequelize.INTEGER
-})
-
-//update db
+var sequelize = new Sequelize('mysql://root:$setufpa@localhost:3306/nodefinger', { logging: false } );
 
 var port = 7000;
 
 // var debugLevel = 1;
-
 
 var fingerServer = net.createServer(setServer)
     .listen(port, function() {
@@ -36,10 +25,10 @@ var fingerServer = net.createServer(setServer)
     });
 
 function setServer(sock){
-
     sock.setKeepAlive(true, 30000);
 
     var sessionId;
+    var lastID;
 
     sock.on('data', function(data){
         dataParser(data, sock);
@@ -53,16 +42,11 @@ function setServer(sock){
 }
 
 function dataParser(data, sock){
-    log('data', data);
-
-
     try{
        data = JSON.parse(data);
     } catch(err){
         errorHandler(err);
     }
-
-
 
     if(data.type === 'conn'){
         log('client', 'O cliente \"' + data.hwid + '\" está tentando se conectar');
@@ -74,13 +58,19 @@ function dataParser(data, sock){
         }
     }
 
-
-
     if(sessionId){
         switch(data.type){
             case 'fingerid':
                 sendMessage(sock, 'fingerid', data.id)
                 break;
+            case 'addfinger':
+                sendMessage(sock, 'addfinger')
+                break;
+            case 'registerok':
+                saveUser(lastID);
+                break;
+            case 'registerfail':
+                log('server', 'Falha na tentativa de registro do novo usuário! ID: ' + lastID);
         }
     }
 
@@ -106,17 +96,50 @@ function sendMessage(sock, type, data){
         case 'authfail':
             sock.write(JSON.stringify({ type: 'conn', 'auth': 'fail' }));
             break;
+        case 'addfinger':
+            getLastID(data, function(data){
+                sock.write(JSON.stringify(data));
+            })
+            break;
         case 'fingerid':
-            checkFinger(data)
-            sock.write(JSON.stringify({type: 'auth', auth: 'fail'}));
+            checkFinger(data, function(data){
+                sock.write(JSON.stringify(data));
+            })
             break;
     }
 
 }
 
-function checkFinger(id){
-    Users.findAll({
-        where: { id: 1 }
+function checkFinger(id, fn){
+    sequelize.query('SELECT * from users WHERE fingerid=' + id).spread(function(results, metadata) {
+        if(results[0]){
+            fn({ type: "auth",
+                auth: "ok",
+                admin: results[0].admin,
+                name: results[0].name
+            });
+            log('client', "Nome: " + results[0].name + " | ID do usuário: " + results[0].userid + " | ID biométrico: " + results[0].fingerid);
+        } else {
+            fn({ type: "auth",
+                 auth: "fail"
+            })
+            log('error', 'Usuário não autorizado! ID: ' + id);
+        }
     })
+    sequelize.query('INSERT INTO history (fingerid, timestamp) VALUES (' + id + ', ' + Math.floor(new Date() / 1000)+ ')');
+}
+
+function getLastID(id, fn){
+    sequelize.query('SELECT * FROM `ids` WHERE available = 1 LIMIT 1').spread(function(results, metadata) {
+        fn({ type: "register", id: results[0].fingerid });
+        lastID = results[0].fingerid;
+    })
+    log('server', 'O ID: ' + lastID + ' foi enviado para cadastro de novo usuário!');
+}
+
+function saveUser(id){
+    sequelize.query('INSERT INTO users (userid, name, fingerid) VALUES (\'000000000000\', \'NOVO USUARIO\', \'' + id + '\')');
+    sequelize.query('UPDATE `ids` SET available=0 WHERE fingerid=' + lastID);
+    log('server', 'Novo usuário cadastrado com sucesso! ID: ' + lastID);
 }
 
