@@ -134,7 +134,7 @@ function getLastID(id, fn){
         fn({ type: "register", id: results[0].fingerid });
         lastID = results[0].fingerid;
     })
-    log('server', 'O ID: ' + lastID + ' foi enviado para cadastro de novo usuário!');
+    log('server', 'O ID: ' + id + ' foi enviado para cadastro de novo usuário!');
 }
 
 function saveUser(id){
