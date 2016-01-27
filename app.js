@@ -3,13 +3,13 @@ var chalk = require('chalk');
 var log = require('./lib/log.js');
 var Sequelize = require('sequelize');
 var sequelize = new Sequelize('mysql://root:$setufpa@localhost:3306/nodefinger', { logging: false } );
-
-var port = 7000;
-
-// var debugLevel = 1;
+var config = {};
+    config.port = 7000;
+    config.hwid = 'GT-SET';
+    config.name = 'GT-SET';
 
 var fingerServer = net.createServer(setServer)
-    .listen(port, function() {
+    .listen(config.port, function() {
         log('server', "O servidor está sendo iniciado...");
     })
     .on('connection', function(data){
@@ -25,12 +25,10 @@ var fingerServer = net.createServer(setServer)
     });
 
 function setServer(sock){
-    sock.setKeepAlive(true, 30000);
-
     var sessionId;
     var lastID;
-
-    sock.on('data', function(data){
+    sock.setKeepAlive(true, 30000)
+    .on('data', function(data){
         dataParser(data, sock);
     })
     .on('close', function(data){
@@ -47,17 +45,14 @@ function dataParser(data, sock){
     } catch(err){
         errorHandler(err);
     }
-
     if(data.type === 'conn'){
         log('client', 'O cliente \"' + data.hwid + '\" está tentando se conectar');
-
-        if(data.hwid == 'GT-SET'){
+        if(data.hwid == config.hwid){
             sessionId = data.hwid;
             sendMessage(sock, 'authok')
             log('server', 'O cliente \"' + data.hwid + '\" foi autenticado com sucesso!');
         }
     }
-
     if(sessionId){
         switch(data.type){
             case 'fingerid':
@@ -73,8 +68,7 @@ function dataParser(data, sock){
                 log('server', 'Falha na tentativa de registro do novo usuário! ID: ' + lastID);
         }
     }
-
-};
+}
 
 function errorHandler(err){
     switch(err.code){
@@ -88,10 +82,9 @@ function errorHandler(err){
 }
 
 function sendMessage(sock, type, data){
-
     switch(type){
         case 'authok':
-            sock.write(JSON.stringify({ type: 'conn', 'auth': 'ok', name: "TESTE" }));
+            sock.write(JSON.stringify({ type: 'conn', 'auth': 'ok', name: config.name }));
             break;
         case 'authfail':
             sock.write(JSON.stringify({ type: 'conn', 'auth': 'fail' }));
@@ -99,30 +92,23 @@ function sendMessage(sock, type, data){
         case 'addfinger':
             getLastID(data, function(data){
                 sock.write(JSON.stringify(data));
-            })
+            });
             break;
         case 'fingerid':
             checkFinger(data, function(data){
                 sock.write(JSON.stringify(data));
-            })
+            });
             break;
     }
-
 }
 
 function checkFinger(id, fn){
     sequelize.query('SELECT * from users WHERE fingerid=' + id).spread(function(results, metadata) {
         if(results[0]){
-            fn({ type: "auth",
-                auth: "ok",
-                admin: results[0].admin,
-                name: results[0].name
-            });
+            fn({ type: "auth", auth: "ok", admin: results[0].admin, name: results[0].name });
             log('client', "Nome: " + results[0].name + " | ID do usuário: " + results[0].userid + " | ID biométrico: " + results[0].fingerid);
         } else {
-            fn({ type: "auth",
-                 auth: "fail"
-            })
+            fn({ type: "auth", auth: "fail" });
             log('error', 'Usuário não autorizado! ID: ' + id);
         }
     })
@@ -142,4 +128,3 @@ function saveUser(id){
     sequelize.query('UPDATE `ids` SET available=0 WHERE fingerid=' + lastID);
     log('server', 'Novo usuário cadastrado com sucesso! ID: ' + lastID);
 }
-
