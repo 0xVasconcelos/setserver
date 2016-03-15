@@ -9,34 +9,18 @@ var config = {};
     config.name = 'GT-SET';
 
 var fingerServer = net.createServer(setServer)
-    .listen(config.port, function() {
-        log('server', "O servidor está sendo iniciado...");
-    })
-    .on('connection', function(data){
-        log('TCP', 'Conexão estabelecida de ' + chalk.underline(data.remoteAddress + ':' + data.remotePort));
-    })
-    .on('listening', function(data){
-        var host = fingerServer.address().address;
-        var port = fingerServer.address().port;
-        log('server', 'O servidor foi iniciado em ' + chalk.underline(host + ':' + port));
-    })
-    .on('error', function(err){
-        errorHandler(err);
-    });
+    .listen(config.port, () => log('server', "O servidor está sendo iniciado..."))
+    .on('connection', (data) => log('TCP', 'Conexão estabelecida de ' + chalk.underline(data.remoteAddress + ':' + data.remotePort)))
+    .on('listening', (data) => log('server', 'O servidor foi iniciado em ' + chalk.underline(fingerServer.address().address + ':' + fingerServer.address().port)))
+    .on('error', (err) => errorHandler(err));
 
 function setServer(sock){
     var sessionId;
     var lastID;
     sock.setKeepAlive(true, 30000)
-    .on('data', function(data){
-        dataParser(data, sock);
-    })
-    .on('close', function(data){
-        console.log(data);
-    })
-    .on('error', function(err){
-        errorHandler(err);
-    });
+    .on('data', (data) => dataParser(data, sock))
+    .on('close', (data) => errorHandler(data))
+    .on('error', (err) => errorHandler(err));
 }
 
 function dataParser(data, sock){
@@ -66,6 +50,7 @@ function dataParser(data, sock){
                 break;
             case 'registerfail':
                 log('server', 'Falha na tentativa de registro do novo usuário! ID: ' + lastID);
+                break;
         }
     }
 }
@@ -90,14 +75,10 @@ function sendMessage(sock, type, data){
             sock.write(JSON.stringify({ type: 'conn', 'auth': 'fail' }));
             break;
         case 'addfinger':
-            getLastID(data, function(data){
-                sock.write(JSON.stringify(data));
-            });
+            getLastID(data, (data) => sock.write(data));
             break;
         case 'fingerid':
-            checkFinger(data, function(data){
-                sock.write(JSON.stringify(data));
-            });
+            checkFinger(data, (data) => sock.write(data));
             break;
     }
 }
@@ -105,10 +86,10 @@ function sendMessage(sock, type, data){
 function checkFinger(id, fn){
     sequelize.query('SELECT * from users WHERE fingerid=' + id).spread(function(results, metadata) {
         if(results[0]){
-            fn({ type: "auth", auth: "ok", admin: results[0].admin, name: results[0].name });
+            fn(JSON.stringify({ type: "auth", auth: "ok", admin: results[0].admin, name: results[0].name }));
             log('client', "Nome: " + results[0].name + " | ID do usuário: " + results[0].userid + " | ID biométrico: " + results[0].fingerid);
         } else {
-            fn({ type: "auth", auth: "fail" });
+            fn(JSON.stringify({ type: "auth", auth: "fail" }));
             log('error', 'Usuário não autorizado! ID: ' + id);
         }
     })
@@ -117,7 +98,7 @@ function checkFinger(id, fn){
 
 function getLastID(id, fn){
     sequelize.query('SELECT * FROM `ids` WHERE available = 1 LIMIT 1').spread(function(results, metadata) {
-        fn({ type: "register", id: results[0].fingerid });
+        fn(JSON.stringify({ type: "register", id: results[0].fingerid }));
         lastID = results[0].fingerid;
     })
     log('server', 'O ID: ' + id + ' foi enviado para cadastro de novo usuário!');
